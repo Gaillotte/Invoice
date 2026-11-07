@@ -1,0 +1,20 @@
+# Copy to config.toml and adjust.
+
+# Gmail search query used to find invoice emails (same syntax as the Gmail search box).
+query = 'has:attachment (subject:(invoice OR facture OR bill OR receipt OR "order confirmation") OR filename:(invoice OR facture)) -label:invoices-processed'
+
+# Only look at mail newer than this (Gmail "newer_than" syntax). Empty = no limit.
+newer_than = "1y"
+
+# Gmail label applied to processed messages (created if missing). Empty = don't label.
+processed_label = "invoices-processed"
+
+# Where attachments and the SQLite register are stored.
+data_dir = "data"
+
+# Attachment extensions that are kept.
+extensions = [".pdf", ".png", ".jpg", ".jpeg", ".xml"]
+
+# OAuth files (see README).
+credentials_file = "credentials.json"
+token_file = "token.json"
