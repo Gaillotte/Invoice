@@ -26,8 +26,18 @@ deletes or sends anything.
    - Under *Credentials → Create credentials → OAuth client ID*, pick **Desktop app** and download
      the JSON file as `credentials.json` in this folder.
 
-3. **Configure** (optional): `cp config.example.toml config.toml` and adjust the search query,
-   time range, label, or storage folder.
+3. **Configure**: `cp config.example.toml config.toml` and edit it. The main setting is the
+   list of keywords used to find invoice emails:
+
+   ```toml
+   keywords = ["Facture", "Facturation", "Invoice"]
+   ```
+
+   An email is selected when its **subject** or an **attachment's file name** contains any of
+   these words (case-insensitive, whole words — Gmail treats `Facture` and `Facturation` as
+   different words, so list each form you want). Phrases like `"Avis de paiement"` work too.
+   Run `invoices query` to see the resulting Gmail search, and paste it into Gmail to check
+   which emails it matches. You can also set the time range, label and storage folder.
 
 4. **Authorise**: `invoices auth` opens a browser to sign in; the token is saved to `token.json`.
 
@@ -40,13 +50,15 @@ invoices fetch --dry-run          # preview what would be imported
 invoices fetch                    # import new invoices
 invoices list --status unpaid     # what's left to pay
 invoices show 12                  # every field of invoice #12
+invoices query                    # show the keywords and the Gmail search used
 invoices edit 12 --amount 89.90 --currency EUR --vendor "EDF"
 invoices pay 12 13 --on 2026-11-05
 invoices summary                  # totals per month and currency
 invoices export -o 2026.csv --since 2026-01-01
 ```
 
-Other options: `fetch --query '...'` to override the search, `fetch --newer-than 30d`,
+Other options: `fetch -k Facture -k Avoir` to use other keywords for one run,
+`fetch --query '...'` to replace the whole search, `fetch --newer-than 30d`,
 `fetch --limit 20`, `fetch --reprocess` to look at already-processed emails again,
 `ignore <id>` for false positives, `-c other.toml` to use another config file.
 
@@ -54,7 +66,7 @@ Other options: `fetch --query '...'` to override the search, `fetch --newer-than
 
 | Step | Detail |
 | --- | --- |
-| Search | The Gmail query in `config.toml` (default: emails with attachments whose subject or file name mentions invoice / facture / bill / receipt, newer than 1 year). |
+| Search | Emails with an attachment whose subject or attachment file name contains one of the configured `keywords` (default: Facture, Facturation, Invoice), newer than 1 year. `extra_query` adds Gmail terms; `query` replaces the generated search entirely. |
 | Download | Attachments with the configured extensions are saved to `data/files/YYYY/MM/<date>_<vendor>_<filename>`. Identical files (same SHA-256) are stored only once. |
 | Extract | Text from PDFs (or the email body as a fallback) is scanned for the amount due (`Amount due`, `Total TTC`, `Net à payer`, …), currency, invoice number and date, in English and French. The vendor comes from the sender's name. Scanned (image-only) PDFs have no text, so fill those in with `invoices edit`. |
 | Record | Each invoice is a row in `data/invoices.db` with status `unpaid`, `paid` or `ignored`. |

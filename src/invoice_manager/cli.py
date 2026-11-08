@@ -65,6 +65,8 @@ def cmd_auth(cfg, args) -> int:
 def cmd_fetch(cfg, args) -> int:
     from .fetcher import fetch
 
+    if args.keyword:
+        cfg.keywords, cfg.query = args.keyword, ""
     if args.query:
         cfg.query = args.query
     if args.newer_than is not None:
@@ -83,6 +85,13 @@ def cmd_fetch(cfg, args) -> int:
         + (" (dry run — nothing saved)" if args.dry_run else "")
     )
     return 1 if report.errors else 0
+
+
+def cmd_query(cfg, args) -> int:
+    print("Keywords: " + ", ".join(cfg.keywords) + ("  (ignored: 'query' is set)" if cfg.query else ""))
+    print(f"Gmail query: {cfg.full_query()}")
+    print("Tip: paste the query into the Gmail search box to see which emails it matches.")
+    return 0
 
 
 def cmd_list(cfg, args) -> int:
@@ -203,11 +212,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     f = sub.add_parser("fetch", help="download new invoices from Gmail")
     f.add_argument("--limit", type=int, help="max messages to look at")
-    f.add_argument("--query", help="override the Gmail search query")
+    f.add_argument("-k", "--keyword", action="append", help="use this keyword instead of the configured ones (repeatable)")
+    f.add_argument("--query", help="override the whole Gmail search query")
     f.add_argument("--newer-than", help="override newer_than, e.g. 30d, 6m, 2y ('' = no limit)")
     f.add_argument("--dry-run", action="store_true", help="show what would be added, save nothing")
     f.add_argument("--reprocess", action="store_true", help="also look at messages already processed")
     f.set_defaults(func=cmd_fetch)
+
+    sub.add_parser("query", help="show the keywords and the Gmail query that fetch will use").set_defaults(func=cmd_query)
 
     l = sub.add_parser("list", help="list invoices")
     _add_filters(l)
