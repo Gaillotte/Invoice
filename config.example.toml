@@ -1,5 +1,10 @@
 # Copy to config.toml and adjust.
 
+# Gmail account to manage. Pre-selected on Google's sign-in page by 'invoices auth';
+# the tool refuses to run if the saved token belongs to another account.
+# No password: access uses Google sign-in (see README).
+account = "you@gmail.com"
+
 # Emails are selected when their subject OR an attachment's file name contains
 # any of these words (case-insensitive, whole words). Add or remove as needed.
 keywords = ["Facture", "Facturation", "Invoice"]

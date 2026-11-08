@@ -32,7 +32,7 @@ class Message:
     attachments: list[Attachment]
 
 
-def authenticate(credentials_file: Path, token_file: Path):
+def authenticate(credentials_file: Path, token_file: Path, account: str | None = None):
     """Return authorised Google credentials, running the browser OAuth flow if needed."""
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
@@ -52,7 +52,8 @@ def authenticate(credentials_file: Path, token_file: Path):
                 "Google Cloud Console and download it there — see README."
             )
         flow = InstalledAppFlow.from_client_secrets_file(str(credentials_file), SCOPES)
-        creds = flow.run_local_server(port=0)
+        # login_hint pre-selects the configured account on Google's sign-in page.
+        creds = flow.run_local_server(port=0, **({"login_hint": account} if account else {}))
     token_file.write_text(creds.to_json())
     token_file.chmod(0o600)
     return creds
@@ -103,12 +104,29 @@ def parse_message(raw: dict) -> Message:
     )
 
 
+class WrongAccountError(RuntimeError):
+    pass
+
+
+def check_account(signed_in: str, expected: str | None, token_file: Path) -> None:
+    """Fail if the token belongs to another mailbox than the configured account."""
+    if expected and signed_in.strip().lower() != expected.strip().lower():
+        raise WrongAccountError(
+            f"Signed in as {signed_in}, but the config file says account = {expected!r}. "
+            f"Delete {token_file} and run 'invoices auth' to sign in with the right account."
+        )
+
+
 class GmailClient:
     def __init__(self, creds):
         from googleapiclient.discovery import build
 
         self.service = build("gmail", "v1", credentials=creds, cache_discovery=False)
         self._labels: dict[str, str] | None = None
+
+    def email_address(self) -> str:
+        """Address of the mailbox this client is signed in to."""
+        return self.service.users().getProfile(userId="me").execute()["emailAddress"]
 
     def search(self, query: str, limit: int | None = None) -> Iterator[str]:
         """Yield message ids matching a Gmail search query."""

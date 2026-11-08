@@ -17,6 +17,9 @@ def _gmail_term(word: str) -> str:
 
 @dataclass
 class Config:
+    # Gmail address to manage. Used to pre-select it at sign-in and to refuse a token
+    # that belongs to another mailbox. Empty = whichever account you sign in with.
+    account: str = ""
     # Words searched (case-insensitive) in the subject and attachment file names.
     keywords: list[str] = field(default_factory=lambda: list(DEFAULT_KEYWORDS))
     # Only keep emails that have an attachment.
@@ -65,6 +68,12 @@ class Config:
         return q
 
 
+# Keys refused on purpose: Google rejects plain passwords for Gmail API access.
+_FORBIDDEN = {
+    "password": "Gmail does not accept a password here. Access uses Google sign-in "
+    "('invoices auth'), which stores a revocable token in token.json — see README.",
+}
+
 _PATHS = {"data_dir", "credentials_file", "token_file"}
 
 
@@ -77,6 +86,8 @@ def load_config(path: Path | None = None) -> Config:
         raw = tomllib.load(fh)
     cfg = Config()
     for key, value in raw.items():
+        if key in _FORBIDDEN:
+            raise ValueError(f"{path}: '{key}' is not supported. {_FORBIDDEN[key]}")
         if not hasattr(cfg, key):
             raise ValueError(f"Unknown config key in {path}: {key!r}")
         if key in _PATHS:

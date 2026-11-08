@@ -37,3 +37,27 @@ def test_bad_keywords(tmp_path):
         load_config(p)
     with pytest.raises(ValueError, match="No keywords"):
         Config(keywords=[]).full_query()
+
+
+def test_account_from_file(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('account = "me@gmail.com"\n')
+    assert load_config(p).account == "me@gmail.com"
+
+
+def test_password_key_rejected(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('account = "me@gmail.com"\npassword = "secret"\n')
+    with pytest.raises(ValueError, match="password"):
+        load_config(p)
+
+
+def test_check_account():
+    from pathlib import Path
+
+    from invoice_manager.gmail import WrongAccountError, check_account
+
+    check_account("Me@Gmail.com", "me@gmail.com", Path("token.json"))
+    check_account("me@gmail.com", "", Path("token.json"))
+    with pytest.raises(WrongAccountError, match="Delete token.json"):
+        check_account("other@gmail.com", "me@gmail.com", Path("token.json"))

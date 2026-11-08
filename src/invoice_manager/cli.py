@@ -17,9 +17,12 @@ def _store(cfg) -> Store:
 
 
 def _gmail(cfg):
-    from .gmail import GmailClient, authenticate
+    from .gmail import GmailClient, authenticate, check_account
 
-    return GmailClient(authenticate(cfg.credentials_file, cfg.token_file))
+    client = GmailClient(authenticate(cfg.credentials_file, cfg.token_file, cfg.account or None))
+    if cfg.account:
+        check_account(client.email_address(), cfg.account, cfg.token_file)
+    return client
 
 
 def _fmt_amount(row) -> str:
@@ -55,10 +58,8 @@ def _print_table(rows) -> None:
 # -- commands ---------------------------------------------------------------
 
 def cmd_auth(cfg, args) -> int:
-    from .gmail import authenticate
-
-    authenticate(cfg.credentials_file, cfg.token_file)
-    print(f"Authorised. Token saved to {cfg.token_file}")
+    client = _gmail(cfg)
+    print(f"Authorised as {client.email_address()}. Token saved to {cfg.token_file}")
     return 0
 
 
@@ -88,6 +89,7 @@ def cmd_fetch(cfg, args) -> int:
 
 
 def cmd_query(cfg, args) -> int:
+    print(f"Account: {cfg.account or '(any — whichever account you sign in with)'}")
     print("Keywords: " + ", ".join(cfg.keywords) + ("  (ignored: 'query' is set)" if cfg.query else ""))
     print(f"Gmail query: {cfg.full_query()}")
     print("Tip: paste the query into the Gmail search box to see which emails it matches.")
@@ -264,9 +266,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .gmail import WrongAccountError
+
     args = build_parser().parse_args(argv)
-    cfg = load_config(args.config)
-    return args.func(cfg, args)
+    try:
+        cfg = load_config(args.config)
+        return args.func(cfg, args)
+    except (ValueError, FileNotFoundError, WrongAccountError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

@@ -26,12 +26,17 @@ deletes or sends anything.
    - Under *Credentials → Create credentials → OAuth client ID*, pick **Desktop app** and download
      the JSON file as `credentials.json` in this folder.
 
-3. **Configure**: `cp config.example.toml config.toml` and edit it. The main setting is the
-   list of keywords used to find invoice emails:
+3. **Configure**: `cp config.example.toml config.toml` and edit it. The main settings are the
+   Gmail account and the keywords used to find invoice emails:
 
    ```toml
+   account = "you@gmail.com"
    keywords = ["Facture", "Facturation", "Invoice"]
    ```
+
+   `account` is pre-selected when you sign in, and the tool refuses to run if the saved token
+   belongs to a different mailbox. There is no password setting: Google rejects plain
+   passwords for programs using the Gmail API, so access goes through Google sign-in below.
 
    An email is selected when its **subject** or an **attachment's file name** contains any of
    these words (case-insensitive, whole words — Gmail treats `Facture` and `Facturation` as
