@@ -102,6 +102,9 @@ def cmd_fetch(cfg, args) -> int:
         f"{len(report.errors)} error(s)."
         + (" (dry run — nothing saved)" if args.dry_run else "")
     )
+    if report.stopped:
+        print("Stopped early because of Gmail's rate limit. Run 'invoices fetch' again in a "
+              "few minutes; it continues where it stopped.")
     return 1 if report.errors else 0
 
 
@@ -300,13 +303,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from .gmail import WrongAccountError
+    from .gmail import RateLimitError, WrongAccountError
 
     args = build_parser().parse_args(argv)
     try:
         cfg = load_config(args.config)
         return args.func(cfg, args)
-    except (ValueError, FileNotFoundError, WrongAccountError) as exc:
+    except (ValueError, FileNotFoundError, WrongAccountError, RateLimitError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
 

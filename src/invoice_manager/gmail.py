@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import base64
 import html
+import json
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -134,23 +136,79 @@ def check_account(signed_in: str, expected: str | None, token_file: Path) -> Non
         )
 
 
-class GmailClient:
-    def __init__(self, creds):
-        from googleapiclient.discovery import build
+class RateLimitError(RuntimeError):
+    """Gmail kept refusing requests for exceeding the per-user quota."""
 
-        self.service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+# Gmail charges 5 quota units for each call we make (list, get, attachment, label) and
+# allows about 15,000 units per user per minute; stay well below that.
+MAX_CALLS_PER_MINUTE = 1200
+RETRY_WAITS = (5, 10, 20, 40, 60)  # seconds, then give up
+
+
+def _is_rate_limit(exc) -> bool:
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    if status == 429:
+        return True
+    if status == 403:
+        try:
+            reasons = {e.get("reason") for e in json.loads(exc.content)["error"].get("errors", [])}
+        except Exception:
+            reasons = set()
+        text = str(exc)
+        return bool(reasons & {"rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded"}) or (
+            "Quota exceeded" in text or "Rate Limit Exceeded" in text
+        )
+    return False
+
+
+class GmailClient:
+    def __init__(self, creds=None, *, service=None, sleep=time.sleep, clock=time.monotonic, log=print):
+        if service is None:
+            from googleapiclient.discovery import build
+
+            service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+        self.service = service
         self._labels: dict[str, str] | None = None
+        self._sleep, self._clock, self._log = sleep, clock, log
+        self._next_call = 0.0
+
+    def _execute(self, request):
+        """Run an API request, pacing calls and waiting out Gmail's per-minute quota."""
+        from googleapiclient.errors import HttpError
+
+        for attempt in range(len(RETRY_WAITS) + 1):
+            now = self._clock()
+            if now < self._next_call:
+                self._sleep(self._next_call - now)
+            self._next_call = max(now, self._next_call) + 60 / MAX_CALLS_PER_MINUTE
+            try:
+                return request.execute()
+            except HttpError as exc:
+                if not _is_rate_limit(exc):
+                    raise
+                if attempt == len(RETRY_WAITS):
+                    raise RateLimitError(
+                        "Gmail is still refusing requests (per-minute quota exceeded). "
+                        "Wait a few minutes and run 'invoices fetch' again: it continues "
+                        "where it stopped."
+                    ) from exc
+                wait = RETRY_WAITS[attempt]
+                self._log(f"  … Gmail rate limit reached, waiting {wait}s before retrying")
+                self._sleep(wait)
 
     def email_address(self) -> str:
         """Address of the mailbox this client is signed in to."""
-        return self.service.users().getProfile(userId="me").execute()["emailAddress"]
+        return self._execute(self.service.users().getProfile(userId="me"))["emailAddress"]
 
     def search(self, query: str, limit: int | None = None) -> Iterator[str]:
         """Yield message ids matching a Gmail search query."""
         users = self.service.users()
         token, count = None, 0
         while True:
-            resp = users.messages().list(userId="me", q=query, pageToken=token, maxResults=100).execute()
+            resp = self._execute(
+                users.messages().list(userId="me", q=query, pageToken=token, maxResults=100)
+            )
             for m in resp.get("messages", []):
                 yield m["id"]
                 count += 1
@@ -161,32 +219,31 @@ class GmailClient:
                 return
 
     def get_message(self, message_id: str) -> Message:
-        raw = self.service.users().messages().get(userId="me", id=message_id, format="full").execute()
+        raw = self._execute(self.service.users().messages().get(userId="me", id=message_id, format="full"))
         return parse_message(raw)
 
     def get_attachment(self, message_id: str, att: Attachment) -> bytes:
         if att.inline_data:
             return _decode(att.inline_data)
-        resp = (
+        resp = self._execute(
             self.service.users().messages().attachments()
             .get(userId="me", messageId=message_id, id=att.attachment_id)
-            .execute()
         )
         return _decode(resp["data"])
 
     def _label_id(self, name: str) -> str:
         if self._labels is None:
-            resp = self.service.users().labels().list(userId="me").execute()
+            resp = self._execute(self.service.users().labels().list(userId="me"))
             self._labels = {l["name"]: l["id"] for l in resp.get("labels", [])}
         if name not in self._labels:
-            created = self.service.users().labels().create(
+            created = self._execute(self.service.users().labels().create(
                 userId="me",
                 body={"name": name, "labelListVisibility": "labelShow", "messageListVisibility": "show"},
-            ).execute()
+            ))
             self._labels[name] = created["id"]
         return self._labels[name]
 
     def add_label(self, message_id: str, name: str) -> None:
-        self.service.users().messages().modify(
+        self._execute(self.service.users().messages().modify(
             userId="me", id=message_id, body={"addLabelIds": [self._label_id(name)]}
-        ).execute()
+        ))

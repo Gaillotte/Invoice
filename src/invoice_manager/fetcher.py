@@ -10,7 +10,7 @@ from typing import Protocol
 
 from .config import Config
 from .extract import extract_fields, pdf_text
-from .gmail import Attachment, Message
+from .gmail import Attachment, Message, RateLimitError
 from .matching import matched_places
 from .store import NewInvoice, Store
 
@@ -30,6 +30,7 @@ class FetchReport:
     duplicates: int = 0
     not_matching: int = 0  # returned by Gmail but no keyword where search_in says to look
     errors: list[str] = field(default_factory=list)
+    stopped: str | None = None  # set when the run was interrupted by Gmail's quota
 
 
 def safe_name(s: str, max_len: int = 60) -> str:
@@ -72,6 +73,13 @@ def fetch(
                 store.mark_processed(message_id)
                 if cfg.processed_label:
                     source.add_label(message_id, cfg.processed_label)
+        except RateLimitError as exc:
+            # Every following request would fail too: stop now. Emails not finished are not
+            # marked processed, so the next run picks them up.
+            report.errors.append(f"{message_id}: {exc}")
+            report.stopped = str(exc)
+            log(f"  ! {exc}")
+            break
         except Exception as exc:  # keep going; report at the end
             report.errors.append(f"{message_id}: {exc}")
             log(f"  ! {message_id}: {exc}")

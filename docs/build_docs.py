@@ -814,6 +814,12 @@ def user_manual():
             f"{c('account')}, {c('token_file')} (e.g. {c(chr(34) + 'token-pro.json' + chr(34))}), "
             f"{c('data_dir')} and {c('invoices_dir')}, then use "
             f"{c('invoices -c pro.toml fetch')} and so on."),
+          h3("“Quota exceeded … Units per minute per user”."),
+          p("Gmail limits how many requests one user can make per minute. Invoice paces its "
+            "requests and, when Gmail still says “too fast”, waits and retries (lines starting "
+            "with …). If the limit persists it stops cleanly: run " + c("invoices fetch")
+            + " again a few minutes later; it continues where it stopped, nothing is lost or "
+            "imported twice. Large first imports may need two or three runs."),
           h3("The sign-in page opens again."),
           p("Normal: while the Google project is in Testing mode, Google ends the sign-in after "
             "7 days. Sign in again; nothing is lost."),
@@ -865,10 +871,12 @@ def update_procedure():
               [c("src/invoice_manager/config.py"), "New setting search_in; Gmail search built from it."],
               [c("src/invoice_manager/fetcher.py"), "Re-checks each email; skips those without a keyword (~)."],
               [c("src/invoice_manager/cli.py"), "query shows “Searched in”; fetch --search-in; summary line."],
+              [c("src/invoice_manager/gmail.py"), "Paces Gmail requests; waits and retries on “Quota "
+                                                  "exceeded”, then stops cleanly."],
               [c("config.example.toml"), "Documents search_in."],
               [c("README.md"), "Documents search_in."],
               [c("docs/*.pdf, docs/build_docs.py"), "Install Guide and User Manual updated; this document."],
-              [c("tests/test_matching.py"), "<b>New.</b> Tests (not needed to use Invoice)."],
+              [c("tests/test_matching.py, tests/test_rate_limit.py"), "<b>New.</b> Tests (not needed to use Invoice)."],
               [c("tests/test_config.py, tests/test_fetch.py"), "Tests updated."],
           ], [68, 98]),
           p("Your own files are <b>not</b> part of the update and must not be replaced:"),
@@ -970,6 +978,9 @@ def update_procedure():
               [f"{c('invoices query')} has no “Searched in” line",
                "The new files were not copied where Invoice runs from. Check the paths in step 4 "
                "and that you are in C:\\DEV\\Factures."],
+              ["“Quota exceeded … Units per minute per user”",
+               "Gmail's per-minute limit: Invoice waits and retries, then stops. Run "
+               + c("invoices fetch") + " again a few minutes later; it continues where it stopped."],
               [f"{c('search_in')} … unknown value",
                "A typo in config.toml: allowed values are \"subject\", \"filename\", \"body\"."],
               ["Too many non-invoice emails imported",
