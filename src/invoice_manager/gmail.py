@@ -34,6 +34,7 @@ class Message:
 
 def authenticate(credentials_file: Path, token_file: Path, account: str | None = None):
     """Return authorised Google credentials, running the browser OAuth flow if needed."""
+    from google.auth.exceptions import RefreshError
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -44,8 +45,13 @@ def authenticate(credentials_file: Path, token_file: Path, account: str | None =
     if creds and creds.valid:
         return creds
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-    else:
+        try:
+            creds.refresh(Request())
+        except RefreshError:
+            # Revoked, or expired (Google expires tokens after 7 days while the
+            # Cloud project is in "Testing" mode): sign in again.
+            creds = None
+    if not (creds and creds.valid):
         if not credentials_file.exists():
             raise FileNotFoundError(
                 f"{credentials_file} not found. Create an OAuth client ID (Desktop app) in "

@@ -10,6 +10,13 @@ summarise and export them to CSV.
 Everything stays on your machine. The tool can read your mail and add a label; it never
 deletes or sends anything.
 
+## Documentation
+
+- [Install Guide (PDF)](docs/Invoice-Install-Guide.pdf) — step-by-step setup, including the Google Cloud part.
+- [User Manual (PDF)](docs/Invoice-User-Manual.pdf) — every command and setting, with examples.
+
+Rebuild them after changes with `python docs/build_docs.py` (needs `reportlab`, included in `.[dev]`).
+
 ## Setup
 
 1. **Install** (Python 3.11+):

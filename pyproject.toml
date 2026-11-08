@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "reportlab>=4.0"]
 
 [project.scripts]
 invoices = "invoice_manager.cli:main"

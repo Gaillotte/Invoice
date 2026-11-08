@@ -25,6 +25,14 @@ def _gmail(cfg):
     return client
 
 
+def _iso_date(value: str) -> str:
+    """argparse type: accept only YYYY-MM-DD dates."""
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid date {value!r}, expected YYYY-MM-DD")
+
+
 def _fmt_amount(row) -> str:
     if row["amount"] is None:
         return "?"
@@ -49,10 +57,10 @@ def _print_table(rows) -> None:
     ]
     widths = [max(len(h), *(len(d[i]) for d in data)) for i, h in enumerate(header)]
     line = "  ".join(h.ljust(w) for h, w in zip(header, widths))
-    print(line)
-    print("-" * len(line))
+    print(line.rstrip())
+    print("-" * len(line.rstrip()))
     for d in data:
-        print("  ".join(v.rjust(w) if i == 4 else v.ljust(w) for i, (v, w) in enumerate(zip(d, widths))))
+        print("  ".join(v.rjust(w) if i == 4 else v.ljust(w) for i, (v, w) in enumerate(zip(d, widths))).rstrip())
 
 
 # -- commands ---------------------------------------------------------------
@@ -183,12 +191,18 @@ def cmd_export(cfg, args) -> int:
     store = _store(cfg)
     rows = store.list(status=args.status, vendor=args.vendor, since=args.since, until=args.until)
     store.close()
-    out = open(args.output, "w", newline="", encoding="utf-8") if args.output != "-" else sys.stdout
+    # --excel: semicolon separator, decimal comma and a UTF-8 BOM, as expected by
+    # Excel in French (and most European) locales.
+    encoding = "utf-8-sig" if args.excel else "utf-8"
+    out = open(args.output, "w", newline="", encoding=encoding) if args.output != "-" else sys.stdout
     try:
-        writer = csv.writer(out)
+        writer = csv.writer(out, delimiter=";" if args.excel else ",")
         writer.writerow(COLUMNS)
         for r in rows:
-            writer.writerow([r[c] for c in COLUMNS])
+            values = [r[c] for c in COLUMNS]
+            if args.excel and r["amount"] is not None:
+                values[COLUMNS.index("amount")] = f"{r['amount']:.2f}".replace(".", ",")
+            writer.writerow(values)
     finally:
         if out is not sys.stdout:
             out.close()
@@ -202,8 +216,8 @@ def cmd_export(cfg, args) -> int:
 def _add_filters(p) -> None:
     p.add_argument("--status", choices=["unpaid", "paid", "ignored"])
     p.add_argument("--vendor", help="substring match on vendor")
-    p.add_argument("--since", help="YYYY-MM-DD")
-    p.add_argument("--until", help="YYYY-MM-DD")
+    p.add_argument("--since", type=_iso_date, help="YYYY-MM-DD")
+    p.add_argument("--until", type=_iso_date, help="YYYY-MM-DD")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -236,7 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("id", type=int)
     e.add_argument("--vendor")
     e.add_argument("--number")
-    e.add_argument("--date", help="YYYY-MM-DD")
+    e.add_argument("--date", type=_iso_date, help="YYYY-MM-DD")
     e.add_argument("--amount", type=float)
     e.add_argument("--currency")
     e.add_argument("--notes")
@@ -244,7 +258,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     pay = sub.add_parser("pay", help="mark invoice(s) as paid")
     pay.add_argument("ids", type=int, nargs="+")
-    pay.add_argument("--on", help="payment date YYYY-MM-DD (default: today)")
+    pay.add_argument("--on", type=_iso_date, help="payment date YYYY-MM-DD (default: today)")
     pay.set_defaults(func=cmd_pay)
 
     up = sub.add_parser("unpay", help="mark invoice(s) as unpaid again")
@@ -261,6 +275,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     x = sub.add_parser("export", help="export invoices to CSV")
     x.add_argument("-o", "--output", default="invoices.csv", help="file path, or - for stdout")
+    x.add_argument("--excel", action="store_true", help="Excel (French/European) format: ';' separator, decimal comma")
     _add_filters(x)
     x.set_defaults(func=cmd_export)
     return p
