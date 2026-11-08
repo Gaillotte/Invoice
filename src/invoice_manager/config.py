@@ -31,6 +31,8 @@ class Config:
     newer_than: str = "1y"
     processed_label: str = "invoices-processed"
     data_dir: Path = Path("data")
+    # Folder where invoice files are saved (in YYYY/MM sub-folders). Empty = <data_dir>/files.
+    invoices_dir: Path | None = None
     extensions: list[str] = field(
         default_factory=lambda: [".pdf", ".png", ".jpg", ".jpeg", ".xml"]
     )
@@ -43,7 +45,7 @@ class Config:
 
     @property
     def files_dir(self) -> Path:
-        return self.data_dir / "files"
+        return self.invoices_dir or self.data_dir / "files"
 
     def keyword_query(self) -> str:
         """Gmail query matching any keyword in the subject or an attachment's file name."""
@@ -74,7 +76,7 @@ _FORBIDDEN = {
     "('invoices auth'), which stores a revocable token in token.json — see README.",
 }
 
-_PATHS = {"data_dir", "credentials_file", "token_file"}
+_PATHS = {"data_dir", "invoices_dir", "credentials_file", "token_file"}
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -91,7 +93,8 @@ def load_config(path: Path | None = None) -> Config:
         if not hasattr(cfg, key):
             raise ValueError(f"Unknown config key in {path}: {key!r}")
         if key in _PATHS:
-            value = Path(value)
+            # "~" is expanded; an empty invoices_dir means the default location.
+            value = Path(value).expanduser() if value else (None if key == "invoices_dir" else Path("."))
         elif key == "extensions":
             value = [e.lower() if e.startswith(".") else f".{e.lower()}" for e in value]
         elif key == "keywords":

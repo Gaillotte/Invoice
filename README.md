@@ -32,7 +32,11 @@ deletes or sends anything.
    ```toml
    account = "you@gmail.com"
    keywords = ["Facture", "Facturation", "Invoice"]
+   invoices_dir = "~/Documents/Factures"
    ```
+
+   `invoices_dir` is where invoice files are saved, in `YYYY/MM` sub-folders (default:
+   `data/files`). The register itself (`invoices.db`) stays in `data_dir`.
 
    `account` is pre-selected when you sign in, and the tool refuses to run if the saved token
    belongs to a different mailbox. There is no password setting: Google rejects plain
@@ -72,7 +76,7 @@ Other options: `fetch -k Facture -k Avoir` to use other keywords for one run,
 | Step | Detail |
 | --- | --- |
 | Search | Emails with an attachment whose subject or attachment file name contains one of the configured `keywords` (default: Facture, Facturation, Invoice), newer than 1 year. `extra_query` adds Gmail terms; `query` replaces the generated search entirely. |
-| Download | Attachments with the configured extensions are saved to `data/files/YYYY/MM/<date>_<vendor>_<filename>`. Identical files (same SHA-256) are stored only once. |
+| Download | Attachments with the configured extensions are saved to `<invoices_dir>/YYYY/MM/<date>_<vendor>_<filename>`. Identical files (same SHA-256) are stored only once. |
 | Extract | Text from PDFs (or the email body as a fallback) is scanned for the amount due (`Amount due`, `Total TTC`, `Net à payer`, …), currency, invoice number and date, in English and French. The vendor comes from the sender's name. Scanned (image-only) PDFs have no text, so fill those in with `invoices edit`. |
 | Record | Each invoice is a row in `data/invoices.db` with status `unpaid`, `paid` or `ignored`. |
 | Mark | Processed emails get the Gmail label `invoices-processed` and are excluded from later searches. |

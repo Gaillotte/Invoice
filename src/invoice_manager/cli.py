@@ -90,6 +90,7 @@ def cmd_fetch(cfg, args) -> int:
 
 def cmd_query(cfg, args) -> int:
     print(f"Account: {cfg.account or '(any — whichever account you sign in with)'}")
+    print(f"Invoices folder: {cfg.files_dir}")
     print("Keywords: " + ", ".join(cfg.keywords) + ("  (ignored: 'query' is set)" if cfg.query else ""))
     print(f"Gmail query: {cfg.full_query()}")
     print("Tip: paste the query into the Gmail search box to see which emails it matches.")

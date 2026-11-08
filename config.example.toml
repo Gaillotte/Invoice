@@ -26,7 +26,12 @@ newer_than = "1y"
 # on later runs. Empty = don't label.
 processed_label = "invoices-processed"
 
-# Where attachments and the SQLite register are stored.
+# Folder where the invoice files are saved, in YYYY/MM sub-folders.
+# Absolute ("/home/me/Documents/Factures"), "~/..." or relative to where you run the tool.
+# Empty = "<data_dir>/files".
+invoices_dir = "~/Documents/Factures"
+
+# Folder for the invoice register (invoices.db).
 data_dir = "data"
 
 # Attachment extensions that are kept.
