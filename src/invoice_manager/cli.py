@@ -76,6 +76,14 @@ def cmd_fetch(cfg, args) -> int:
 
     if args.keyword:
         cfg.keywords, cfg.query = args.keyword, ""
+    if args.search_in:
+        from .config import SEARCH_PLACES
+
+        places = [p.strip().lower() for p in args.search_in.split(",") if p.strip()]
+        bad = [p for p in places if p not in SEARCH_PLACES]
+        if bad or not places:
+            raise ValueError(f"--search-in: use any of {', '.join(SEARCH_PLACES)} separated by commas")
+        cfg.search_in = places
     if args.query:
         cfg.query = args.query
     if args.newer_than is not None:
@@ -89,6 +97,7 @@ def cmd_fetch(cfg, args) -> int:
         store.close()
     print(
         f"\n{report.messages_seen} message(s) matched, {report.messages_skipped} already processed, "
+        f"{report.not_matching} without keyword, "
         f"{len(report.invoices_added)} invoice(s) added, {report.duplicates} duplicate(s), "
         f"{len(report.errors)} error(s)."
         + (" (dry run — nothing saved)" if args.dry_run else "")
@@ -99,9 +108,17 @@ def cmd_fetch(cfg, args) -> int:
 def cmd_query(cfg, args) -> int:
     print(f"Account: {cfg.account or '(any — whichever account you sign in with)'}")
     print(f"Invoices folder: {cfg.files_dir}")
-    print("Keywords: " + ", ".join(cfg.keywords) + ("  (ignored: 'query' is set)" if cfg.query else ""))
+    from .config import SEARCH_PLACES
+
+    ignored = "  (ignored: 'query' is set)" if cfg.query else ""
+    print("Keywords: " + ", ".join(cfg.keywords) + ignored)
+    print("Searched in: " + ", ".join(SEARCH_PLACES.get(p, p) for p in cfg.search_in) + ignored)
     print(f"Gmail query: {cfg.full_query()}")
-    print("Tip: paste the query into the Gmail search box to see which emails it matches.")
+    print("Tip: paste the query into the Gmail search box to see the emails it finds.")
+    if "body" in cfg.search_in and not cfg.query:
+        print("     Gmail also matches keywords in the sender's name or address; fetch re-checks")
+        print("     each email and skips those without a keyword in: "
+              + ", ".join(SEARCH_PLACES.get(p, p) for p in cfg.search_in) + ".")
     return 0
 
 
@@ -230,6 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     f = sub.add_parser("fetch", help="download new invoices from Gmail")
     f.add_argument("--limit", type=int, help="max messages to look at")
     f.add_argument("-k", "--keyword", action="append", help="use this keyword instead of the configured ones (repeatable)")
+    f.add_argument("--search-in", help="override search_in for this run, e.g. subject,filename")
     f.add_argument("--query", help="override the whole Gmail search query")
     f.add_argument("--newer-than", help="override newer_than, e.g. 30d, 6m, 2y ('' = no limit)")
     f.add_argument("--dry-run", action="store_true", help="show what would be added, save nothing")

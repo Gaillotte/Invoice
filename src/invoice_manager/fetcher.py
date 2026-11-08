@@ -11,6 +11,7 @@ from typing import Protocol
 from .config import Config
 from .extract import extract_fields, pdf_text
 from .gmail import Attachment, Message
+from .matching import matched_places
 from .store import NewInvoice, Store
 
 
@@ -27,6 +28,7 @@ class FetchReport:
     messages_skipped: int = 0
     invoices_added: list[int] = field(default_factory=list)
     duplicates: int = 0
+    not_matching: int = 0  # returned by Gmail but no keyword where search_in says to look
     errors: list[str] = field(default_factory=list)
 
 
@@ -56,6 +58,11 @@ def fetch(
             continue
         try:
             msg = source.get_message(message_id)
+            # With a custom 'query', the user's own search decides; otherwise re-check keywords.
+            if not cfg.query and not matched_places(msg, cfg.keywords, cfg.search_in):
+                report.not_matching += 1
+                log(f"  ~ {msg.subject!r}: keyword not in {', '.join(cfg.search_in)}, skipped")
+                continue
             kept = [a for a in msg.attachments if Path(a.filename).suffix.lower() in cfg.extensions]
             if not kept:
                 log(f"  - {msg.subject!r}: no matching attachment")

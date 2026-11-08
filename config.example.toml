@@ -5,9 +5,15 @@
 # No password: access uses Google sign-in (see README).
 account = "you@gmail.com"
 
-# Emails are selected when their subject OR an attachment's file name contains
-# any of these words (case-insensitive, whole words). Add or remove as needed.
+# Words that identify an invoice email (case- and accent-insensitive, whole words).
 keywords = ["Facture", "Facturation", "Invoice"]
+
+# Where to look for the keywords. Any of:
+#   "subject"  - the email subject
+#   "filename" - the names of the attached files
+#   "body"     - the message text of the email
+# An email is kept when at least one keyword is found in at least one of these places.
+search_in = ["subject", "filename", "body"]
 
 # Only keep emails that have an attachment.
 require_attachment = true

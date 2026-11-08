@@ -107,3 +107,23 @@ def test_parse_gmail_message():
     assert "Total 5 €" in msg.body_text
     assert msg.attachments[0].filename == "f.pdf"
     assert msg.attachments[0].attachment_id == "att1"
+
+
+def test_fetch_body_keyword_and_skip_non_matching(tmp_path):
+    cfg = Config(data_dir=tmp_path)
+    store = Store(cfg.db_path)
+    body_hit = _msg("m1", {"doc.xml": b"Total 10,00 EUR"}, body="Ci-joint votre facture.")
+    body_hit[0].subject = "Votre commande"
+    sender_only = _msg("m2", {"doc2.xml": b"Total 5,00 EUR"}, body="Merci")
+    sender_only[0].subject = "Votre commande"  # only the sender address says 'factures'
+    sender_only[0].sender = "factures@shop.fr"
+    src = FakeSource({"m1": body_hit, "m2": sender_only})
+
+    report = fetch(src, store, cfg, log=lambda *_: None)
+    assert len(report.invoices_added) == 1 and report.not_matching == 1
+    assert not store.is_processed("m2")  # re-checked next time, e.g. after keywords change
+    assert ("m2", "invoices-processed") not in src.labelled
+
+    cfg.search_in = ["subject", "filename"]
+    report = fetch(src, store, cfg, reprocess=True, log=lambda *_: None)
+    assert report.not_matching == 2

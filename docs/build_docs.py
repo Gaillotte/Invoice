@@ -3,7 +3,7 @@
     pip install reportlab
     python docs/build_docs.py
 
-Writes docs/Invoice-Install-Guide.pdf and docs/Invoice-User-Manual.pdf.
+Writes the Install Guide, the User Manual and the update procedure into docs/.
 """
 
 from __future__ import annotations
@@ -118,12 +118,22 @@ def h3(text: str):
     return Paragraph(text, S["h3"])
 
 
+S["bullet-lead-in"] = ParagraphStyle("bullet-lead-in", parent=S["bullet"], keepWithNext=1)
+
+
+def _item_style(text: str, last: bool):
+    # The last item of a list that introduces a block ("…:") stays with that block.
+    return S["bullet-lead-in" if last and text.rstrip().endswith(":") else "bullet"]
+
+
 def bullets(*items: str):
-    return [Paragraph(i, S["bullet"], bulletText="•") for i in items]
+    return [Paragraph(i, _item_style(i, n == len(items)), bulletText="•")
+            for n, i in enumerate(items, 1)]
 
 
 def steps(*items: str):
-    return [Paragraph(i, S["bullet"], bulletText=f"{n}.") for n, i in enumerate(items, 1)]
+    return [Paragraph(i, _item_style(i, n == len(items)), bulletText=f"{n}.")
+            for n, i in enumerate(items, 1)]
 
 
 CODE_WIDTH = 88  # characters that fit in a code box at this font size
@@ -153,7 +163,10 @@ def code(text: str):
         ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
         ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
-    return KeepTogether([Spacer(1, 2), t, Spacer(1, 6)])
+    # A one-row table never splits, and unlike KeepTogether it can follow a keepWithNext
+    # paragraph ("…, for example:") onto the same page.
+    t.spaceBefore, t.spaceAfter = 2, 6
+    return t
 
 
 def _callout(label: str, text: str, bg, bar):
@@ -164,7 +177,8 @@ def _callout(label: str, text: str, bg, bar):
         ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
         ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
-    return KeepTogether([Spacer(1, 2), t, Spacer(1, 8)])
+    t.spaceBefore, t.spaceAfter = 2, 8
+    return t
 
 
 def tip(text: str):
@@ -188,8 +202,8 @@ def table(header: list[str], rows: list[list[str]], widths: list[float]):
         ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     t.spaceBefore, t.spaceAfter = 2, 8
-    # Short tables move to the next page whole; long ones may split across pages.
-    return KeepTogether([t]) if len(rows) < 8 else t
+    # Tables may split between rows; the header row is repeated on the next page.
+    return t
 
 
 # --------------------------------------------------------------------------- document
@@ -375,13 +389,16 @@ def install_guide():
           code("cp config.example.toml config.toml      # macOS / Linux\n"
                "copy config.example.toml config.toml    # Windows"),
           p(f"Open {c('config.toml')} in a text editor (Notepad, TextEdit in plain-text mode, "
-            f"VS Code…) and set at least these three lines:"),
+            f"VS Code…) and set at least these lines:"),
           code('account = "your.name@gmail.com"\n'
                'keywords = ["Facture", "Facturation", "Invoice"]\n'
+               'search_in = ["subject", "filename", "body"]\n'
                'invoices_dir = "~/Documents/Factures"'),
           *bullets(
               f"{c('account')}: the Gmail address to manage.",
               f"{c('keywords')}: the words that identify an invoice email (see the User Manual).",
+              f"{c('search_in')}: where those words are looked for: the email subject, the "
+              f"attachment names and the message text.",
               f"{c('invoices_dir')}: where the invoice files will be saved. {c('~')} means your "
               f"home folder. On Windows you can also write {c('C:/Users/you/Documents/Factures')} "
               f"(use forward slashes).",
@@ -421,11 +438,13 @@ def install_guide():
           code("Account: your.name@gmail.com\n"
                "Invoices folder: /home/you/Documents/Factures\n"
                "Keywords: Facture, Facturation, Invoice\n"
-               "Gmail query: has:attachment {subject:Facture subject:Facturation subject:Invoice "
+               "Searched in: subject, attachment names, message text\n"
+               "Gmail query: has:attachment {Facture Facturation Invoice "
                "filename:Facture filename:Facturation filename:Invoice} "
                "-label:invoices-processed newer_than:1y"),
-          tip("Paste the “Gmail query” line into the Gmail search box: you see exactly the "
-              "emails Invoice will look at."),
+          tip("Paste the “Gmail query” line into the Gmail search box to see the emails "
+              "Invoice will look at. Gmail may show a few more (a keyword only in the sender's "
+              "address, for example): Invoice checks each one and skips those."),
           p("Preview the import without saving anything:"),
           code("invoices fetch --dry-run"),
           p("If the list looks right, import for real, then display the result:"),
@@ -487,8 +506,9 @@ def user_manual():
     s += [h1("1. How Invoice works"),
           p("Each time you run " + c("invoices fetch") + ", Invoice:"),
           *steps(
-              "<b>Searches Gmail</b> for emails whose subject or attachment name contains one of "
-              "your keywords, that have an attachment, and that it has not handled before.",
+              "<b>Searches Gmail</b> for emails that contain one of your keywords in the subject, "
+              "an attachment name or the message text, that have an attachment, and that it has "
+              "not handled before.",
               "<b>Downloads the attachments</b> (PDF, images, XML e-invoices) into your invoices "
               "folder, sorted by year and month.",
               "<b>Reads</b> the vendor, invoice number, date, amount and currency from the "
@@ -512,19 +532,38 @@ def user_manual():
 
     s += [h1("2. Choosing which emails are invoices"),
           p(f"The {c('keywords')} list in {c('config.toml')} decides which emails are picked up:"),
-          code('keywords = ["Facture", "Facturation", "Invoice"]'),
-          p("An email is selected when its <b>subject</b> or the <b>file name of an attachment</b> "
-            "contains at least one of these words. The rules come from Gmail search:"),
+          code('keywords = ["Facture", "Facturation", "Invoice"]\n'
+               'search_in = ["subject", "filename", "body"]'),
+          p(f"An email is selected when at least one keyword appears in at least one of the "
+            f"places listed in {c('search_in')}:"),
+          table(["Value", "Where the keyword is looked for", "Example that matches"], [
+              [c('"subject"'), "The email subject.", "Votre <b>facture</b> EDF d'octobre"],
+              [c('"filename"'), "The names of the attached files.", "<b>Facture</b>_2026_10.pdf"],
+              [c('"body"'), "The message text of the email.",
+               "Veuillez trouver ci-joint votre <b>facture</b>."],
+          ], [28, 64, 74]),
+          p("Remove a value to stop searching there; for example "
+            + c('search_in = ["subject", "filename"]') + " ignores the message text. How words "
+            "are matched:"),
           *bullets(
-              "Upper/lower case does not matter: <i>Facture</i> also finds <i>FACTURE</i> and "
-              "<i>facture</i>.",
+              "Upper/lower case and accents do not matter: <i>Facture</i> also finds "
+              "<i>FACTURE</i> and <i>facturé</i>.",
               "Whole words only: <i>Facture</i> does <b>not</b> find <i>Factures</i> or "
               "<i>Facturation</i>. List every form you want.",
+              "In file names, <i>_ - .</i> separate words: <i>Facture</i> finds "
+              "<i>edf-facture_2026.pdf</i>, but not <i>MaFacture.pdf</i>.",
               f"Several words are allowed in one entry: {c(chr(34) + 'Avis de paiement' + chr(34))} "
-              f"matches that exact phrase.",
-              "The text <i>inside</i> attached PDFs is not searched by Gmail, only the subject and "
-              "file names.",
+              f"matches that phrase.",
+              "The sender's name and address are not searched, nor the text <i>inside</i> "
+              "attached PDFs.",
           ),
+          warn("Searching the message text finds more invoices, but also more emails that only "
+               "<i>mention</i> an invoice (payment reminders, newsletters, order confirmations "
+               "with a PDF). Check new imports with " + c("invoices list") + " and use "
+               + c("invoices ignore") + ", or exclude a sender with " + c("extra_query") + "."),
+          p("Gmail does the first, broad search; Invoice then re-checks every email it gets "
+            "back and skips those without a keyword in the chosen places (marked "
+            + c("~") + " in the fetch output)."),
           h2("Fine-tuning the search"),
           table(["Setting", "Effect", "Example"], [
               [c("require_attachment"), "Only emails with an attachment (default true).",
@@ -534,7 +573,8 @@ def user_manual():
               [c("newer_than"), "Only emails younger than this. Empty = no limit.",
                f"{c(chr(34) + '30d' + chr(34))}, {c(chr(34) + '6m' + chr(34))}, "
                f"{c(chr(34) + '2y' + chr(34))}"],
-              [c("query"), "Replaces the whole keyword-based search with your own Gmail query.",
+              [c("query"), "Replaces the whole keyword-based search with your own Gmail query "
+                           "(keywords and search_in are then not used).",
                c('"from:edf.fr has:attachment"')],
           ], [38, 76, 52]),
           p(f"Run {c('invoices query')} after any change to see the resulting search, and paste "
@@ -547,7 +587,8 @@ def user_manual():
     s += [h1("3. Commands"),
           table(["Command", "What it does"], [
               [c("invoices auth"), "Sign in to Gmail (or check the sign-in)."],
-              [c("invoices query"), "Show the account, invoices folder, keywords and Gmail search."],
+              [c("invoices query"), "Show the account, invoices folder, keywords, where they are "
+                                    "searched and the Gmail search."],
               [c("invoices fetch"), "Import new invoices from Gmail."],
               [c("invoices list"), "List invoices in the register."],
               [c("invoices show ID"), "Show every detail of one invoice."],
@@ -565,23 +606,29 @@ def user_manual():
 
           h2("3.1 fetch — import new invoices"),
           code("invoices fetch --dry-run"),
-          code("Searching Gmail: has:attachment {subject:Facture …} -label:invoices-processed newer_than:1y\n"
+          code("Searching Gmail: has:attachment {Facture Facturation Invoice …} -label:invoices-processed newer_than:1y\n"
                "  + EDF | 2026-10-14 | 87.40 EUR | facture_4471.pdf\n"
                "  + Amazon.fr | 2026-11-04 | 129.00 EUR | Invoice-INV-FR-500118.pdf\n"
                "  - 'Facturation novembre': no matching attachment\n"
                "  = facture_4471_copie.pdf: already in register\n"
+               "  ~ 'Votre commande': keyword not in subject, filename, body, skipped\n"
                "\n"
-               "4 message(s) matched, 0 already processed, 2 invoice(s) added, 1 duplicate(s), 0 error(s)."),
+               "5 message(s) matched, 0 already processed, 1 without keyword, 2 invoice(s) added, "
+               "1 duplicate(s), 0 error(s)."),
           table(["Mark", "Meaning"], [
               [c("+"), "New invoice: vendor, date, amount and file name."],
               [c("-"), "The email matched but had no attachment of a kept type (see extensions)."],
               [c("="), "This exact file is already in the register (sent twice, reminder email…)."],
+              [c("~"), "Gmail returned the email, but no keyword is in the places of search_in "
+                       "(e.g. only in the sender's address). Skipped, not labelled."],
               [c("!"), "Error on that email; the others are still processed. Run fetch again later."],
           ], [16, 150]),
           table(["Option", "Effect"], [
               [c("--dry-run"), "Show what would be imported; save nothing, label nothing."],
               [c("-k WORD"), f"Use this keyword instead of the configured ones, for this run "
                              f"only. Repeat for several: {c('-k Facture -k Avoir')}."],
+              [c("--search-in LIST"), f"Override {c('search_in')} for this run only, e.g. "
+                                      f"{c('--search-in subject,filename')}."],
               [c("--newer-than 30d"), f"Override {c('newer_than')}; {c(chr(34)*2)} = no limit."],
               [c("--limit 20"), "Look at no more than 20 emails."],
               [c("--query '…'"), "Use this Gmail search instead of the generated one."],
@@ -704,7 +751,9 @@ def user_manual():
               [c("account"), "(empty)", "Gmail address to manage. Pre-selected at sign-in; Invoice "
                                         "refuses to run if signed in to another account."],
               [c("keywords"), c('["Facture", "Facturation", "Invoice"]'),
-               "Words searched in the subject and attachment names (chapter 2)."],
+               "Words that identify an invoice email (chapter 2)."],
+              [c("search_in"), c('["subject", "filename", "body"]'),
+               "Where keywords are looked for: subject, attachment names, message text."],
               [c("require_attachment"), c("true"), "Only emails with an attachment."],
               [c("extra_query"), "(empty)", "Gmail search terms added to the search."],
               [c("query"), "(empty)", "Full Gmail search replacing the keyword search."],
@@ -749,7 +798,8 @@ def user_manual():
     s += [h1("8. Questions and answers"),
           h3("An invoice is missing."),
           p(f"Look for it in Gmail with the query printed by {c('invoices query')}. Usually the "
-            f"subject and file name contain none of the keywords (add one), it has no attachment "
+            f"email contains none of the keywords where {c('search_in')} looks (add one), it has "
+            f"no attachment "
             f"(e.g. an invoice to download from a website — download it manually), or it is older "
             f"than {c('newer_than')}. If the email already has the <i>invoices-processed</i> label, "
             f"remove the label in Gmail or use {c('fetch --reprocess')}."),
@@ -775,10 +825,176 @@ def user_manual():
     return s
 
 
+# --------------------------------------------------------------------------- update procedure
+
+BRANCH = "claude/inspiring-tesla-7jpw97"
+ZIP_DIR = "invoice-claude-inspiring-tesla-7jpw97"
+
+
+def update_procedure():
+    s = cover(
+        "Update Procedure",
+        "Keywords in the message text — updating an existing installation",
+        "This update lets Invoice look for your keywords in the message text of the emails, "
+        "in addition to the subject and the attachment names. It is for an installation that "
+        "already works in C:\\DEV\\Factures. Your settings, sign-in, register and invoice files "
+        "are kept. Allow 10 minutes.",
+    )
+
+    s += [h1("1. What changes"),
+          *bullets(
+              f"New setting {c('search_in')}: where keywords are looked for — "
+              f"{c(chr(34) + 'subject' + chr(34))}, {c(chr(34) + 'filename' + chr(34))} "
+              f"(attachment names) and/or {c(chr(34) + 'body' + chr(34))} (message text). "
+              f"<b>Default: all three.</b>",
+              "Every email Gmail returns is now re-checked on your computer, so an email is only "
+              "imported when a keyword really is in one of those places (not, for instance, only "
+              "in the sender's address). Such emails are shown with " + c("~") + " and skipped.",
+              "Keyword matching ignores accents as well as case (" + c("Facture") + " also finds "
+              "“facturé”).",
+              f"{c('invoices query')} shows where keywords are searched; {c('invoices fetch')} "
+              f"accepts {c('--search-in subject,filename')} for a single run.",
+          ),
+          warn("Searching the message text finds more emails. On the first run after the update, "
+               "emails from the last year (setting newer_than) that mention a keyword only in "
+               "their text will be imported too. Do the dry run in step 5 first and look at the "
+               "list."),
+          h2("Files in this update"),
+          table(["File", "Change"], [
+              [c("src/invoice_manager/matching.py"), "<b>New.</b> Checks where each keyword appears in an email."],
+              [c("src/invoice_manager/config.py"), "New setting search_in; Gmail search built from it."],
+              [c("src/invoice_manager/fetcher.py"), "Re-checks each email; skips those without a keyword (~)."],
+              [c("src/invoice_manager/cli.py"), "query shows “Searched in”; fetch --search-in; summary line."],
+              [c("config.example.toml"), "Documents search_in."],
+              [c("README.md"), "Documents search_in."],
+              [c("docs/*.pdf, docs/build_docs.py"), "Install Guide and User Manual updated; this document."],
+              [c("tests/test_matching.py"), "<b>New.</b> Tests (not needed to use Invoice)."],
+              [c("tests/test_config.py, tests/test_fetch.py"), "Tests updated."],
+          ], [68, 98]),
+          p("Your own files are <b>not</b> part of the update and must not be replaced:"),
+          table(["Keep as is", "What it is"], [
+              [c("config.toml"), "Your settings (account, keywords, invoices folder)."],
+              [c("credentials.json"), "Your Google app identity."],
+              [c("token.json"), "Your Gmail sign-in."],
+              [c("data\\"), "Your register invoices.db (list, statuses, notes)."],
+              [c(".venv\\"), "The Python environment."],
+              ["Your invoices folder", "Set by invoices_dir; never touched by an update."],
+          ], [52, 114]),
+          tip("No new Python package is needed, and nothing changes in the register: the update "
+              "only replaces program files."),
+          ]
+
+    s += [h1("2. Close Invoice"),
+          p("Close any window where Invoice is running (the Factures desktop launcher, or a "
+            "PowerShell window with " + c("(.venv)") + " at the start of the line)."),
+          p("Then open a new <b>PowerShell</b> window (Start menu › type “PowerShell”)."),
+          ]
+
+    s += [h1("3. Back up your files"),
+          p("Copy your personal files to a dated backup folder. Paste these lines into PowerShell:"),
+          code('$App = "C:\\DEV\\Factures"\n'
+               '$Backup = "C:\\DEV\\Factures-backup-$(Get-Date -Format yyyy-MM-dd)"\n'
+               'New-Item -ItemType Directory -Force $Backup | Out-Null\n'
+               'foreach ($f in "config.toml", "credentials.json", "token.json", "data") {\n'
+               '    if (Test-Path "$App\\$f") { Copy-Item "$App\\$f" $Backup -Recurse -Force }\n'
+               '}\n'
+               'Get-ChildItem $Backup'),
+          p("The last line lists what was saved: you should see config.toml, credentials.json, "
+            "token.json and data."),
+          ]
+
+    s += [h1("4. Install the new files"),
+          p("Use <b>A</b> if your C:\\DEV\\Factures folder was created with <i>git clone</i>, "
+            "<b>B</b> if you downloaded a ZIP. If unsure, run " + c("git -C C:\\DEV\\Factures status")
+            + ": an error such as “not a git repository” means ZIP."),
+          h2("A. With git"),
+          code("cd C:\\DEV\\Factures\n"
+               f"git fetch origin {BRANCH}\n"
+               f"git checkout {BRANCH}\n"
+               f"git pull origin {BRANCH}"),
+          p("Your personal files are ignored by git and stay in place. If git refuses with "
+            "“Your local changes would be overwritten”, a program file was edited by hand: note "
+            "its name, and either restore it with " + c("git checkout -- FILE") + " or use "
+            "method B."),
+          h2("B. With a ZIP download"),
+          *steps(
+              "Open the project page on GitHub, choose the branch <b>" + BRANCH + "</b> in the "
+              "branch selector, then <b>Code › Download ZIP</b>.",
+              "Extract the ZIP into your Downloads folder. This gives the folder <b>"
+              + ZIP_DIR + "</b>.",
+              "Copy the program files over your installation (personal files are not in the "
+              "ZIP, so they cannot be overwritten):",
+          ),
+          code(f'$New = "$env:USERPROFILE\\Downloads\\{ZIP_DIR}"\n'
+               '$App = "C:\\DEV\\Factures"\n'
+               'foreach ($d in "src", "tests", "docs", "scripts") {\n'
+               '    Copy-Item "$New\\$d" $App -Recurse -Force\n'
+               '}\n'
+               'foreach ($f in "pyproject.toml", "README.md", "config.example.toml",\n'
+               '              ".gitignore", ".gitattributes") {\n'
+               '    Copy-Item "$New\\$f" $App -Force\n'
+               '}'),
+          tip("If the extracted folder has another name or place, change the first line. If "
+              "Windows put the files one level deeper (Downloads\\" + ZIP_DIR + "\\" + ZIP_DIR
+              + "), add that second level to the path."),
+          h2("Refresh the installation"),
+          p("Not strictly needed for this update, but quick and safe:"),
+          code("cd C:\\DEV\\Factures\n.\\.venv\\Scripts\\Activate.ps1\npip install -e ."),
+          ]
+
+    s += [h1("5. Check"),
+          code("invoices query"),
+          p("A new line <b>Searched in</b> must appear:"),
+          code("Account: your.name@gmail.com\n"
+               "Invoices folder: C:\\...\\Factures\n"
+               "Keywords: Facture, Facturation, Invoice\n"
+               "Searched in: subject, attachment names, message text\n"
+               "Gmail query: has:attachment {Facture Facturation Invoice filename:Facture "
+               "filename:Facturation filename:Invoice} -label:invoices-processed newer_than:1y"),
+          p("Then preview what the next import would add — nothing is saved:"),
+          code("invoices fetch --dry-run"),
+          p("Lines with " + c("+") + " would be imported; lines with " + c("~") + " were found "
+            "by Gmail but have no keyword where Invoice looks, and are skipped."),
+          h2("Choose where to search (optional)"),
+          p("Nothing to change in config.toml if you want all three places: that is the default. "
+            "If the dry run brings too many emails that only mention an invoice, add this line "
+            "to " + c("config.toml") + " (under keywords) to go back to subject and attachment "
+            "names only:"),
+          code('search_in = ["subject", "filename"]'),
+          p("When the dry run looks right, import as usual: " + c("invoices fetch") + ", or "
+            "double-click the Factures launcher on your desktop."),
+          ]
+
+    s += [h1("6. If something goes wrong"),
+          table(["Symptom", "What to do"], [
+              [f"{c('invoices query')} has no “Searched in” line",
+               "The new files were not copied where Invoice runs from. Check the paths in step 4 "
+               "and that you are in C:\\DEV\\Factures."],
+              [f"{c('search_in')} … unknown value",
+               "A typo in config.toml: allowed values are \"subject\", \"filename\", \"body\"."],
+              ["Too many non-invoice emails imported",
+               f"Mark them with {c('invoices ignore ID')}; restrict search_in (step 5) or exclude "
+               f"senders with {c('extra_query')}."],
+              ["Anything else", "Go back to the previous version below and send me the message."],
+          ], [58, 108]),
+          h2("Going back to the previous version"),
+          *steps(
+              "Restore the program: with git, " + c("git checkout 9457a86") + "; with a ZIP, "
+              "copy the folders from your previous download as in step 4B.",
+              "Restore your personal files if needed: copy them from the backup folder of step 3 "
+              "back into C:\\DEV\\Factures.",
+          ),
+          p("Emails already imported stay in the register; going back only changes how the next "
+            "imports search."),
+          ]
+    return s
+
+
 def main() -> None:
     for name, title, story in [
         ("Invoice-Install-Guide.pdf", "Install Guide", install_guide()),
         ("Invoice-User-Manual.pdf", "User Manual", user_manual()),
+        ("Invoice-Update-Search-Message-Text.pdf", "Update Procedure", update_procedure()),
     ]:
         path = HERE / name
         Doc(path, title).build_story(story)

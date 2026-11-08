@@ -8,6 +8,14 @@ from pathlib import Path
 
 DEFAULT_KEYWORDS = ["Facture", "Facturation", "Invoice"]
 
+# Where keywords are looked for: email subject, attachment file names, email message text.
+SEARCH_PLACES = {
+    "subject": "subject",
+    "filename": "attachment names",
+    "body": "message text",
+}
+DEFAULT_SEARCH_IN = ["subject", "filename", "body"]
+
 
 def _gmail_term(word: str) -> str:
     """Quote a keyword for Gmail search if it contains spaces or special characters."""
@@ -20,8 +28,10 @@ class Config:
     # Gmail address to manage. Used to pre-select it at sign-in and to refuse a token
     # that belongs to another mailbox. Empty = whichever account you sign in with.
     account: str = ""
-    # Words searched (case-insensitive) in the subject and attachment file names.
+    # Words searched (case-insensitive, whole words) in the places listed in search_in.
     keywords: list[str] = field(default_factory=lambda: list(DEFAULT_KEYWORDS))
+    # Where to look for the keywords: any of "subject", "filename", "body".
+    search_in: list[str] = field(default_factory=lambda: list(DEFAULT_SEARCH_IN))
     # Only keep emails that have an attachment.
     require_attachment: bool = True
     # Extra Gmail search terms appended to the generated query, e.g. "-from:newsletter@x.com".
@@ -48,11 +58,24 @@ class Config:
         return self.invoices_dir or self.data_dir / "files"
 
     def keyword_query(self) -> str:
-        """Gmail query matching any keyword in the subject or an attachment's file name."""
+        """Gmail query matching any keyword in the places listed in search_in.
+
+        Gmail has no operator for the message text alone: a bare word matches anywhere in
+        the email (including the sender), so the fetcher re-checks each email locally
+        against exactly the places in search_in.
+        """
         words = [_gmail_term(k) for k in self.keywords if k.strip()]
         if not words:
             raise ValueError("No keywords configured: set 'keywords' (or 'query') in the config file.")
-        terms = [f"subject:{w}" for w in words] + [f"filename:{w}" for w in words]
+        if not self.search_in:
+            raise ValueError("'search_in' is empty: list at least one of subject, filename, body.")
+        terms = []
+        if "body" in self.search_in:
+            terms += words  # bare words: anywhere in the email, subject included
+        elif "subject" in self.search_in:
+            terms += [f"subject:{w}" for w in words]
+        if "filename" in self.search_in:
+            terms += [f"filename:{w}" for w in words]
         parts = []
         if self.require_attachment:
             parts.append("has:attachment")
@@ -97,6 +120,16 @@ def load_config(path: Path | None = None) -> Config:
             value = Path(value).expanduser() if value else (None if key == "invoices_dir" else Path("."))
         elif key == "extensions":
             value = [e.lower() if e.startswith(".") else f".{e.lower()}" for e in value]
+        elif key == "search_in":
+            if isinstance(value, str):
+                value = [value]
+            value = [str(v).strip().lower() for v in value]
+            bad = [v for v in value if v not in SEARCH_PLACES]
+            if bad:
+                raise ValueError(
+                    f"'search_in' in {path}: unknown value(s) {', '.join(map(repr, bad))}; "
+                    f"use any of {', '.join(map(repr, SEARCH_PLACES))}"
+                )
         elif key == "keywords":
             if isinstance(value, str) or not all(isinstance(k, str) for k in value):
                 raise ValueError(f"'keywords' in {path} must be a list of strings")

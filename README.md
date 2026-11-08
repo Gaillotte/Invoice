@@ -14,6 +14,7 @@ deletes or sends anything.
 
 - [Install Guide (PDF)](docs/Invoice-Install-Guide.pdf) — step-by-step setup, including the Google Cloud part.
 - [User Manual (PDF)](docs/Invoice-User-Manual.pdf) — every command and setting, with examples.
+- [Update procedure: keywords in the message text (PDF)](docs/Invoice-Update-Search-Message-Text.pdf) — updating an existing installation.
 
 Rebuild them after changes with `python docs/build_docs.py` (needs `reportlab`, included in `.[dev]`).
 
@@ -39,6 +40,7 @@ Rebuild them after changes with `python docs/build_docs.py` (needs `reportlab`, 
    ```toml
    account = "you@gmail.com"
    keywords = ["Facture", "Facturation", "Invoice"]
+   search_in = ["subject", "filename", "body"]
    invoices_dir = "~/Documents/Factures"
    ```
 
@@ -49,9 +51,10 @@ Rebuild them after changes with `python docs/build_docs.py` (needs `reportlab`, 
    belongs to a different mailbox. There is no password setting: Google rejects plain
    passwords for programs using the Gmail API, so access goes through Google sign-in below.
 
-   An email is selected when its **subject** or an **attachment's file name** contains any of
-   these words (case-insensitive, whole words — Gmail treats `Facture` and `Facturation` as
-   different words, so list each form you want). Phrases like `"Avis de paiement"` work too.
+   An email is selected when any of these words appears in one of the places listed in
+   `search_in`: the **subject**, an **attachment's file name** and/or the **message text**
+   (case- and accent-insensitive, whole words: `Facture` and `Facturation` are different
+   words, so list each form you want). Phrases like `"Avis de paiement"` work too.
    Run `invoices query` to see the resulting Gmail search, and paste it into Gmail to check
    which emails it matches. You can also set the time range, label and storage folder.
 
@@ -79,6 +82,7 @@ unpaid invoices. If the project is elsewhere, edit the folder at the top of both
 `scripts\Factures.cmd` and `scripts\Factures.ps1`.
 
 Other options: `fetch -k Facture -k Avoir` to use other keywords for one run,
+`fetch --search-in subject,filename` to change where they are searched for one run,
 `fetch --query '...'` to replace the whole search, `fetch --newer-than 30d`,
 `fetch --limit 20`, `fetch --reprocess` to look at already-processed emails again,
 `ignore <id>` for false positives, `-c other.toml` to use another config file.
@@ -87,7 +91,7 @@ Other options: `fetch -k Facture -k Avoir` to use other keywords for one run,
 
 | Step | Detail |
 | --- | --- |
-| Search | Emails with an attachment whose subject or attachment file name contains one of the configured `keywords` (default: Facture, Facturation, Invoice), newer than 1 year. `extra_query` adds Gmail terms; `query` replaces the generated search entirely. |
+| Search | Emails with an attachment where one of the configured `keywords` (default: Facture, Facturation, Invoice) appears in the subject, an attachment name or the message text (`search_in`), newer than 1 year. Gmail does the broad search; each email is then re-checked locally so only real matches in those places are imported. `extra_query` adds Gmail terms; `query` replaces the generated search entirely. |
 | Download | Attachments with the configured extensions are saved to `<invoices_dir>/YYYY/MM/<date>_<vendor>_<filename>`. Identical files (same SHA-256) are stored only once. |
 | Extract | Text from PDFs (or the email body as a fallback) is scanned for the amount due (`Amount due`, `Total TTC`, `Net à payer`, …), currency, invoice number and date, in English and French. The vendor comes from the sender's name. Scanned (image-only) PDFs have no text, so fill those in with `invoices edit`. |
 | Record | Each invoice is a row in `data/invoices.db` with status `unpaid`, `paid` or `ignored`. |

@@ -6,15 +6,35 @@ from invoice_manager.config import Config, load_config
 def test_default_keywords_query():
     q = Config().full_query()
     assert q == (
-        "has:attachment {subject:Facture subject:Facturation subject:Invoice "
+        "has:attachment {Facture Facturation Invoice "
         "filename:Facture filename:Facturation filename:Invoice} "
         "-label:invoices-processed newer_than:1y"
     )
 
 
+def test_search_in_subject_and_filename_only():
+    q = Config(search_in=["subject", "filename"], newer_than="", processed_label="").full_query()
+    assert q == (
+        "has:attachment {subject:Facture subject:Facturation subject:Invoice "
+        "filename:Facture filename:Facturation filename:Invoice}"
+    )
+
+
+def test_search_in_validation(tmp_path):
+    p = tmp_path / "config.toml"
+    p.write_text('search_in = ["Subject", "BODY"]\n')
+    assert load_config(p).search_in == ["subject", "body"]
+    p.write_text('search_in = ["subject", "content"]\n')
+    with pytest.raises(ValueError, match="unknown value.*content"):
+        load_config(p)
+    with pytest.raises(ValueError, match="search_in"):
+        Config(search_in=[]).full_query()
+
+
 def test_keywords_from_file(tmp_path):
     p = tmp_path / "config.toml"
     p.write_text('keywords = ["Facture", "Avis de paiement"]\nrequire_attachment = false\n'
+                 'search_in = ["subject", "filename"]\n'
                  'extra_query = "-from:promo@x.com"\nnewer_than = ""\nprocessed_label = ""\n')
     cfg = load_config(p)
     assert cfg.keywords == ["Facture", "Avis de paiement"]
