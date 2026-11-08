@@ -110,6 +110,9 @@ def parse_message(raw: dict) -> Message:
     )
 
 
+EXAMPLE_ACCOUNT = "you@gmail.com"  # placeholder in config.example.toml
+
+
 class WrongAccountError(RuntimeError):
     pass
 
@@ -117,9 +120,17 @@ class WrongAccountError(RuntimeError):
 def check_account(signed_in: str, expected: str | None, token_file: Path) -> None:
     """Fail if the token belongs to another mailbox than the configured account."""
     if expected and signed_in.strip().lower() != expected.strip().lower():
+        if expected.strip().lower() == EXAMPLE_ACCOUNT:
+            raise WrongAccountError(
+                f"Signed in as {signed_in}, but config.toml still has the example address "
+                f"account = {expected!r}. Put your own address there, e.g. "
+                f'account = "{signed_in}", then run the command again.'
+            )
         raise WrongAccountError(
-            f"Signed in as {signed_in}, but the config file says account = {expected!r}. "
-            f"Delete {token_file} and run 'invoices auth' to sign in with the right account."
+            f"Signed in as {signed_in}, but the config file says account = {expected!r}.\n"
+            f"  - If {signed_in} is the right mailbox: change 'account' in the config file.\n"
+            f"  - Otherwise: delete {token_file} and run 'invoices auth' to sign in with "
+            f"{expected}."
         )
 
 

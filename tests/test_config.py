@@ -59,8 +59,10 @@ def test_check_account():
 
     check_account("Me@Gmail.com", "me@gmail.com", Path("token.json"))
     check_account("me@gmail.com", "", Path("token.json"))
-    with pytest.raises(WrongAccountError, match="Delete token.json"):
+    with pytest.raises(WrongAccountError, match=r"(?s)change 'account'.*delete token.json"):
         check_account("other@gmail.com", "me@gmail.com", Path("token.json"))
+    with pytest.raises(WrongAccountError, match="still has the example address"):
+        check_account("other@gmail.com", "you@gmail.com", Path("token.json"))
 
 
 def test_invoices_dir(tmp_path):
