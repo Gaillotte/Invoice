@@ -73,6 +73,11 @@ invoices summary                  # totals per month and currency
 invoices export -o 2026.csv --since 2026-01-01
 ```
 
+**Windows shortcut:** copy `scripts\Factures.cmd` to your desktop and double-click it. It goes
+to `C:\DEV\Factures`, activates `.venv`, runs `invoices auth`, `invoices fetch`, then lists
+unpaid invoices. If the project is elsewhere, edit the folder at the top of both
+`scripts\Factures.cmd` and `scripts\Factures.ps1`.
+
 Other options: `fetch -k Facture -k Avoir` to use other keywords for one run,
 `fetch --query '...'` to replace the whole search, `fetch --newer-than 30d`,
 `fetch --limit 20`, `fetch --reprocess` to look at already-processed emails again,
